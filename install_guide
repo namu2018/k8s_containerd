@@ -46,21 +46,7 @@ sudo nerdctl ps
 sudo nerdctl images
 curl localhost
 sudo nerdctl logs nginx
-#방화벽
-#master
-sudo ufw enable
-sudo ufw allow 6443/tcp
-sudo ufw allow 2379:2380/tcp
-sudo ufw allow 10250/tcp
-sudo ufw allow 10251/tcp
-sudo ufw allow 10252/tcp
-sudo ufw status
 
-# Worker
-sudo ufw enable
-sudo ufw allow 10250/tcp
-sudo ufw allow 30000:32767/tcp
-sudo ufw status
 https://confluence.curvc.com/pages/releaseview.action?pageId=98048155
 https://www.skyer9.pe.kr/wordpress/?p=6630
 https://fwany0708.tistory.com/13?category=533908
@@ -80,6 +66,52 @@ EOF
 
 sudo sysctl --system
 
-sudo kubeadm join 192.168.127.131:6443 --token iltk7d.6q6v14ooj6r2wn5j  \
-        --discovery-token-ca-cert-hash sha256:cb28d12d4f536f5180c3da36f2cada21281c6ac500e29c089dc0ed21bcf24547
-                                                 cb28d12d4f536f5180c3da36f2cada21281c6ac500e29c089dc0ed21bcf24547
+modprobe br_netfilter
+
+echo 1 > /proc/sys/net/bridge/bridge-nf-call-iptables
+
+# kube install
+- ****Installing kubeadm, kubelet and kubectl****
+# Update the apt package index and install packages needed to use the Kubernetes apt repository:
+apt-get update
+apt-get install -y apt-transport-https ca-certificates curl
+
+# Download the Google Cloud public signing key:
+curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+# Add the Kubernetes apt repository:
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# Update apt package index, install kubelet, kubeadm and kubectl, and pin their version:
+apt-get update
+apt-get install -y kubelet kubeadm kubectl
+apt-mark hold kubelet kubeadm kubectl
+
+#in master
+kubeadm init
+
+# sudo 를 붙이지 않습니다.
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+# sudo 를 붙이지 않습니다.
+kubectl get nodes
+---------------------------
+NAME               STATUS   ROLES           AGE    VERSION
+ip-172-31-20-177   NotReady   control-plane   79s   v1.25.3
+
+#Pod 간 통신을 위한 add-on Weave Net works 을 설치합니다.
+kubectl apply -f https://github.com/weaveworks/weave/releases/download/v2.8.1/weave-daemonset-k8s.yaml
+kubectl get nodes
+NAME               STATUS   ROLES           AGE    VERSION
+ip-172-31-20-177   Ready    control-plane   3m5s   v1.25.3
+
+
+#in worker
+kubeadm join 192.168.4.139:6443 --token 16fmxj.ha6bsdw0u27a9k4a \
+	--discovery-token-ca-cert-hash sha256:b3269964451b94114a07b85230b5a76b6c1ad620562684296461f808250a3e2a 
+    
+#referennce
+https://confluence.curvc.com/pages/releaseview.action?pageId=98048155
+https://www.skyer9.pe.kr/wordpress/?p=6630
+https://fwany0708.tistory.com/13?category=533908
