@@ -47,10 +47,6 @@ sudo nerdctl images
 curl localhost
 sudo nerdctl logs nginx
 
-https://confluence.curvc.com/pages/releaseview.action?pageId=98048155
-https://www.skyer9.pe.kr/wordpress/?p=6630
-https://fwany0708.tistory.com/13?category=533908
-
 #swapoff
 sudo swapoff -a && sudo sed -i '/swap/s/^/#/' /etc/fstab
 
