@@ -104,6 +104,9 @@ ip-172-31-20-177   Ready    control-plane   3m5s   v1.25.3
 
 
 #in worker
+#port forwarding설정
+#/etc/sysctl.conf를 열어 net.ipv4.ip_forward=1행의 주석을 제거
+sysctl -p
 kubeadm join 192.168.4.139:6443 --token 16fmxj.ha6bsdw0u27a9k4a \
 	--discovery-token-ca-cert-hash sha256:b3269964451b94114a07b85230b5a76b6c1ad620562684296461f808250a3e2a 
     
