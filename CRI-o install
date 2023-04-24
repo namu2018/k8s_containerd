@@ -1,0 +1,205 @@
+CRI-O를 컨테이너 런타임으로 설치하는 데 필요한 단계를 따라가보자. 시스템에 따라 설치 방법이 다르므로 다음 링크를 참고하도록 하자.
+
+https://kubernetes.io/docs/setup/production-environment/container-runtimes/#cri-o
+
+​
+
+다음 명령을 사용하여 시스템에 CRI-O를 설치한다. 먼저 필수 구성 요소를 설치 및 구성한다.
+
+# .conf 파일을 만들어 부팅시 모듈을 로드합니다.
+cat <<EOF | sudo tee /etc/modules-load.d/crio.conf
+overlay
+br_netfilter
+EOF
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+# 필요한 sysctl 매개 변수를 설정하면 재부팅 후에도 유지됩니다.
+cat <<EOF | sudo tee /etc/sysctl.d/99-kubernetes-cri.conf
+net.bridge.bridge-nf-call-iptables  = 1
+net.ipv4.ip_forward                 = 1
+net.bridge.bridge-nf-call-ip6tables = 1
+EOF
+
+sudo sysctl --system
+​
+
+우분투에 cri-o를 설치하는 방법이다. 설치를 진행하기 앞서 환경 변수를 몇개 설정하고 시작한다.
+
+OS=xUbuntu_20.04
+VERSION=1.21
+​
+
+레파지토리를 추가하고 apt 명령으로 설치를 진행한다.
+
+cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable.list
+deb https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/ /
+EOF
+cat <<EOF | sudo tee /etc/apt/sources.list.d/devel:kubic:libcontainers:stable:cri-o:$VERSION.list
+deb http://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable:/cri-o:/$VERSION/$OS/ /
+EOF
+
+curl -L https://download.opensuse.org/repositories/devel:/kubic:/libcontainers:/stable/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers.gpg add -
+curl -L https://download.opensuse.org/repositories/devel:kubic:libcontainers:stable:cri-o:$VERSION/$OS/Release.key | sudo apt-key --keyring /etc/apt/trusted.gpg.d/libcontainers-cri-o.gpg add -
+
+sudo apt-get update
+sudo apt-get install cri-o cri-o-runc -y
+
+crio가 잘 설치됐다면 데몬을 재시작하고 crio를 활성화해서 시작한다.
+
+sudo systemctl daemon-reload
+sudo systemctl enable crio --now
+서비스가 잘 돌고 있는지 확인한다.
+
+# service crio status
+● crio.service - Container Runtime Interface for OCI (CRI-O)
+   Loaded: loaded (/lib/systemd/system/crio.service; enabled; vendor preset: enabled)
+   Active: active (running) since Sun 2021-07-04 08:01:37 UTC; 1h 5min ago
+     Docs: https://github.com/cri-o/cri-o
+ Main PID: 7000 (crio)
+    Tasks: 14
+   Memory: 785.8M
+   CGroup: /system.slice/crio.service
+           └─7000 /usr/bin/crio
+
+쿠버네티스 패키지 설치
+
+여기서는 쿠버네티스 설치와 운영에 필요한 kubeadm, kubelet, kubectl을 설치한다. 마찬가지로 시스템에 따라 설치 방법이 다르므로 다음 내용을 참고하기 바란다.
+
+https://kubernetes.io/ko/docs/setup/production-environment/tools/kubeadm/install-kubeadm/#kubeadm-kubelet-%EB%B0%8F-kubectl-%EC%84%A4%EC%B9%98
+
+​
+
+kubeadm, kubelet, kubectl의 기능은 다음과 같다.
+
+- kubeadm: 클러스터를 부트스트랩하는 명령으로 다양한 관리 기능을 제공한다.
+
+- kubelet: 클러스터 노드에서 동작하는 데몬이다. 컨테이너 런타임을 동작시키며 포드와 컨테이너 시작과 같은 작업을 수행한다.
+
+- kubectl: 쿠버네티스 클러스터에 접속할 수 있는 클라이언트 프로그램으로 CLI 형태로 동작한다.
+
+​
+
+다음 명령을 실행해 데비안 기반의 패키지 배포를 시작한다. 전체를 한번에 복사 붙여넣기하면 중간에 에러가 발생하기도 하므로 가능하면 한두줄 단위로 명령을 실행하기 바란다. 모든 인스턴스에 동일한 작업을 수행한다.
+
+# apt 패키지 색인을 업데이트하고, 쿠버네티스 apt 리포지터리를 사용하는 데 필요한 패키지를 설치한다.
+sudo apt-get update
+sudo apt-get install -y apt-transport-https ca-certificates curl
+
+# 구글 클라우드의 공개 사이닝 키를 다운로드 한다.
+sudo curl -fsSLo /usr/share/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg
+
+# 쿠버네티스 apt 리포지터리를 추가한다.
+echo "deb [signed-by=/usr/share/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | sudo tee /etc/apt/sources.list.d/kubernetes.list
+
+# apt 패키지 색인을 업데이트하고, kubelet, kubeadm, kubectl을 설치하고 해당 버전을 고정한다.
+sudo apt-get update
+sudo apt-get install -y kubelet kubeadm kubectl
+sudo apt-mark hold kubelet kubeadm kubectl
+#swap off
+sudo swapoff -a && sudo sed -i '/swap/s/^/#/' /etc/fstab
+
+마스터 노드 초기화
+
+여기서는 instance-1을 마스터 노드로 사용하겠다. instance-1에서 마스터 초기화를 진행한다.
+
+sudo kubeadm init --pod-network-cidr=192.168.0.0/16
+​
+
+설치가 정상적으로 진행되지 않으면 다음 명령을 실행하고 다시 init 을 시도하기 바란다.
+
+kubeadm reset
+​
+
+만약 정상적으로 설치된다면 다음과 같이 성공메시지가 나오면서 이후에 필요한 구성에 대해 알려준다.
+
+Your Kubernetes control-plane has initialized successfully!
+
+To start using your cluster, you need to run the following as a regular user:
+
+  mkdir -p $HOME/.kube
+  sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Alternatively, if you are the root user, you can run:
+
+  export KUBECONFIG=/etc/kubernetes/admin.conf
+
+You should now deploy a pod network to the cluster.
+Run "kubectl apply -f [podnetwork].yaml" with one of the options listed at:
+  https://kubernetes.io/docs/concepts/cluster-administration/addons/
+
+Then you can join any number of worker nodes by running the following on each as root:
+
+kubeadm join 192.168.4.139:6443 --token 75qbi0.cg7b13dbndht9uud \
+        --discovery-token-ca-cert-hash sha256:0fd4376cfa7d7066e17da6b77b1aa8029f615e819766c3ecc68339d6eea59e53
+
+
+다음 명령을 사용해 kubectl 구성을 수행한다. 이 명령을 수행하면 kubectl을 사용해서 클러스터로 질의가 가능하다.
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+클러스터에 노드 목록을 조회해보자. Not Ready로 나오는 것은 정상이다.
+
+# kubectl get node
+NAME         STATUS     ROLES                  AGE    VERSION
+instance-1   NotReady   control-plane,master   4m2s   v1.21.2
+​
+
+워커 노드 조인하기
+
+이제 instance-2와 instance-3으로 가서 조인을 수행한다. 마스터 노드에서 가장 마지막에 나오는 명령어를 가져온다. 이 명령은 하단의 내용을 복사하지 말고 꼭 본인의 시스템에서 나오는 출력을 사용하도록 하자. 이 글의 명령어를 복사하면 token값과 hash 값이 다르므로 오류가 나올 수 있다.
+
+kubeadm join 192.168.4.139:6443 --token 75qbi0.cg7b13dbndht9uud \
+        --discovery-token-ca-cert-hash sha256:0fd4376cfa7d7066e17da6b77b1aa8029f615e819766c3ecc68339d6eea59e53
+
+명령을 잘 실행했다면 다음과 같이 컨트롤 플레인에서 노드를 조회하라고 나온다.
+
+Run 'kubectl get nodes' on the control-plane to see this node join the cluster.
+instance-2와 instance-3이 클러스터 잘 참여해서 노드를 조회하
+
+# kubectl get nodes
+NAME         STATUS     ROLES                  AGE     VERSION
+instance-1   NotReady   control-plane,master   7m46s   v1.21.2
+instance-2   NotReady   <none>                 15s     v1.21.2
+instance-3   NotReady   <none>                 5s      v1.21.2
+​
+
+CNI Calico 설치
+
+다음 명령을 사용해 Calico를 설치한다. Calico의 설치 방법은 다음을 참고했다.
+
+https://docs.projectcalico.org/getting-started/kubernetes/quickstart
+
+kubectl create -f https://docs.projectcalico.org/manifests/tigera-operator.yaml
+kubectl create -f https://docs.projectcalico.org/manifests/custom-resources.yaml
+네임스페이스를 확인하면 포드가 하나 떠있다. 다음 명령의 결과가 모두 Running 상태가 될때까지 기다린다.
+
+$ watch kubectl get pods -n calico-system
+NAME                                       READY   STATUS              RESTARTS   AGE
+calico-kube-controllers-7f58dbcbbd-qsdsp   0/1     ContainerCreating   0          33s
+calico-node-5xf8l                          0/1     Running             0          33s
+calico-node-k2dbd                          0/1     Running             0          33s
+calico-node-124bd                          0/1     Running             0          33s
+calico-typha-596f7fc7b7-mmmcz              1/1     Running             0          34s
+calico-typha-596f7fc7b7-xwk6g              1/1     Running             0          26s
+calico-typha-596f7fc7b7-1wqws              1/1     Running             0          26s
+
+테인트를 제거해서 마스터 노드도 설치할 수 있도록 테인트 설정을 변경한다. 그리고 노드의 상태를 확인하자.
+
+kubectl taint nodes --all node-role.kubernetes.io/master- 
+kubectl get nodes -o wide
+​
+
+결과가 다음과 같이 Ready 상태로 변경되면 잘 설정된 것이다.
+
+# kubectl get nodes
+NAME         STATUS   ROLES                  AGE     VERSION
+instance-1   Ready    control-plane,master   4m28s   v1.21.2
+instance-2   Ready    <none>                 4m11s   v1.21.2
+instance-3   Ready    <none>                 4m1s    v1.21.2
+​
+[출처] CRI-O 기반으로 쿠버네티스 설치하기(Calico 설치)|작성자 일선스
+
