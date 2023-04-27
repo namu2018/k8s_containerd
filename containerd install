@@ -51,8 +51,8 @@ EOF
 sudo systemctl daemon-reload
 sudo systemctl restart docker
 
-rm /etc/contained/config.toml
-system restart containerd
+rm /etc/containred/config.toml
+systemctl restart containerd
   
 #swapoff
 sudo swapoff -a && sudo sed -i '/swap/s/^/#/' /etc/fstab
