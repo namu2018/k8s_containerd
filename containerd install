@@ -116,7 +116,14 @@ ip-172-31-20-177   Ready    control-plane   3m5s   v1.25.3
 sysctl -p
 kubeadm join 192.168.4.139:6443 --token 16fmxj.ha6bsdw0u27a9k4a \
 	--discovery-token-ca-cert-hash sha256:b3269964451b94114a07b85230b5a76b6c1ad620562684296461f808250a3e2a 
-    
+
+#node 추가시 
+#1. in master token 및 hash값 확인
+kubectl token create
+==> 결과sl9t50.wq6534cotvnk772b
+openssl x509 -pubkey -in /etc/kubernetes/pki/ca.crt | openssl rsa -pubin -outform der 2>/dev/null | openssl dgst -sha256 -hex | sed 's/^.* //' 
+==> 결과 d4232002dc968da54ccc56879edc4b6aaeb8ab844d71d7962b24d6f97fc54573
+
 #referennce
 https://confluence.curvc.com/pages/releaseview.action?pageId=98048155
 https://www.skyer9.pe.kr/wordpress/?p=6630
